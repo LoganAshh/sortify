@@ -6,7 +6,7 @@ import Animated, {
 } from "react-native-reanimated";
 import "../global.css";
 
-export default function App() {
+export default function HomePage() {
   const offset = useSharedValue(0);
 
   const animatedStyle = useAnimatedStyle(() => ({
