@@ -1,23 +1,20 @@
-// app/index.tsx
-import { useRouter } from "expo-router";
-import React, { useContext, useEffect } from "react";
+import { useContext, useEffect } from "react";
 import { Pressable, Text, View } from "react-native";
 import { AuthContext } from "../context/AuthContext";
 
-export default function HomeScreen() {
+export default function HomeScreen({ navigation }) {
   const { isLoggedIn, authLoading, logout } = useContext(AuthContext);
-  const router = useRouter();
 
   useEffect(() => {
     if (!authLoading && !isLoggedIn) {
-      router.replace("/login");
+      navigation.replace("Login");
     }
   }, [authLoading, isLoggedIn]);
 
   if (authLoading) {
     return (
       <View className="flex-1 justify-center items-center bg-white">
-        <Text className="text-gray-500 text-lg">Checking login...</Text>
+        <Text className="text-lg text-gray-600">Checking login status...</Text>
       </View>
     );
   }
