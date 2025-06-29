@@ -1,14 +1,13 @@
-export const config = {
-  clientId: "45eb125c13c84eaca7307c1a1097e8af",
-  redirectUrl: "exp://127.0.0.1:19000",
-  scopes: [
-    "user-read-private",
-    "playlist-read-private",
-    "playlist-modify-public",
-  ],
-  serviceConfiguration: {
-    authorizationEndpoint: "https://accounts.spotify.com/authorize",
-    tokenEndpoint: "https://accounts.spotify.com/api/token",
-  },
-  usePKCE: true,
+// config/spotifyAuth.ts
+export const discovery = {
+  authorizationEndpoint: "https://accounts.spotify.com/authorize",
+  tokenEndpoint: "https://accounts.spotify.com/api/token",
 };
+
+export const SPOTIFY_CLIENT_ID = "your-client-id";
+export const REDIRECT_URI = "exp://127.0.0.1:19000"; // or from AuthSession.makeRedirectUri()
+export const SCOPES = [
+  "user-read-private",
+  "playlist-modify-public",
+  "playlist-read-private",
+];
