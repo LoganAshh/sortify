@@ -1,4 +1,4 @@
-// context/AuthContext.js
+// context/AuthContext.js// context/AuthContext.js
 import * as SecureStore from "expo-secure-store";
 import { createContext, useEffect, useState } from "react";
 import { Alert } from "react-native";
@@ -210,6 +210,7 @@ export const AuthProvider = ({ children }) => {
         logout,
         makeAuthenticatedRequest,
         showError,
+        checkAuth, // Export checkAuth so login screen can call it
       }}
     >
       {children}

@@ -1,7 +1,7 @@
 import * as AuthSession from "expo-auth-session";
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
-import React, { useEffect } from "react";
+import React, { useContext, useEffect } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
 import {
   discovery,
@@ -9,9 +9,11 @@ import {
   SCOPES,
   SPOTIFY_CLIENT_ID,
 } from "../config/spotifyAuth";
+import { AuthContext } from "../context/AuthContext";
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { checkAuth } = useContext(AuthContext);
 
   // Get dynamic redirect URI
   const redirectUri = getRedirectUri();
@@ -78,6 +80,11 @@ export default function LoginScreen() {
             tokenResponse.refreshToken
           );
         }
+
+        // Trigger auth check to update AuthContext state
+        await checkAuth();
+
+        // Now redirect to home
         router.replace("/");
       } else {
         Alert.alert(
