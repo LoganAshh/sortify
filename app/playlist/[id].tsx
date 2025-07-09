@@ -11,15 +11,7 @@ import {
 } from "react-native";
 import { AuthContext } from "../../context/AuthContext";
 
-interface AudioFeatures {
-  id: string;
-  energy: number;
-  valence: number;
-  danceability: number;
-  tempo: number;
-  acousticness: number;
-  instrumentalness: number;
-}
+const LASTFM_API_KEY = "0e84436d0016844bdfc26b59aac7cd24";
 
 interface Track {
   id: string;
@@ -28,13 +20,20 @@ interface Track {
   album: {
     name: string;
     images: { url: string }[];
+    release_date?: string;
   };
   preview_url: string;
   duration_ms: number;
 }
 
+interface TrackFeatures {
+  energy: number; // 0-1 scale
+  mood: string; // 'energetic', 'chill', 'happy', 'sad', 'party'
+  genres: string[];
+}
+
 interface TrackWithFeatures extends Track {
-  audioFeatures: AudioFeatures;
+  features?: TrackFeatures;
   cluster?: number;
 }
 
@@ -119,7 +118,9 @@ export default function PlaylistScreen() {
   const [loading, setLoading] = useState(true);
   const [clustering, setClustering] = useState(false);
   const [clustered, setClustered] = useState(false);
-  const [numberOfClusters, setNumberOfClusters] = useState(3);
+  const [selectedMoodGroup, setSelectedMoodGroup] = useState<string | null>(
+    null
+  );
 
   const decodeHtmlEntities = (text: string) => {
     const htmlEntities: { [key: string]: string } = {
@@ -145,6 +146,169 @@ export default function PlaylistScreen() {
     }
   }, [id]);
 
+  // Define all possible mood groups
+  const ALL_MOOD_GROUPS = [
+    {
+      id: "party",
+      name: "🎉 Party Vibes",
+      keywords: ["party", "dance", "club", "upbeat", "celebration"],
+    },
+    {
+      id: "energetic",
+      name: "🔥 High Energy",
+      keywords: [
+        "rock",
+        "metal",
+        "punk",
+        "hardcore",
+        "aggressive",
+        "energetic",
+      ],
+    },
+    {
+      id: "happy",
+      name: "😊 Feel Good",
+      keywords: ["happy", "uplifting", "positive", "cheerful", "joyful"],
+    },
+    {
+      id: "chill",
+      name: "😌 Chill Out",
+      keywords: ["chill", "mellow", "relaxing", "peaceful", "calm", "ambient"],
+    },
+    {
+      id: "sad",
+      name: "😢 Emotional",
+      keywords: ["sad", "melancholy", "emotional", "depressing", "lonely"],
+    },
+    {
+      id: "electronic",
+      name: "🎛️ Electronic",
+      keywords: ["electronic", "techno", "house", "edm", "synthesizer"],
+    },
+    {
+      id: "acoustic",
+      name: "🎸 Acoustic",
+      keywords: ["acoustic", "folk", "singer-songwriter", "unplugged"],
+    },
+    {
+      id: "intense",
+      name: "⚡ Intense",
+      keywords: ["intense", "dramatic", "powerful", "epic"],
+    },
+  ];
+
+  // Analyze energy and mood from Last.fm tags
+  const analyzeEnergyAndMood = (tags: string[]): TrackFeatures => {
+    const tagString = tags.join(" ").toLowerCase();
+
+    // Energy analysis based on genre and descriptive tags
+    let energy = 0.5; // default neutral
+
+    // High energy indicators
+    if (
+      tagString.includes("rock") ||
+      tagString.includes("metal") ||
+      tagString.includes("punk") ||
+      tagString.includes("electronic") ||
+      tagString.includes("dance") ||
+      tagString.includes("hip hop") ||
+      tagString.includes("techno") ||
+      tagString.includes("house")
+    ) {
+      energy += 0.3;
+    }
+
+    if (
+      tagString.includes("hardcore") ||
+      tagString.includes("aggressive") ||
+      tagString.includes("energetic") ||
+      tagString.includes("upbeat") ||
+      tagString.includes("party") ||
+      tagString.includes("fast")
+    ) {
+      energy += 0.2;
+    }
+
+    // Low energy indicators
+    if (
+      tagString.includes("ambient") ||
+      tagString.includes("chill") ||
+      tagString.includes("mellow") ||
+      tagString.includes("soft") ||
+      tagString.includes("acoustic") ||
+      tagString.includes("folk") ||
+      tagString.includes("ballad") ||
+      tagString.includes("slow")
+    ) {
+      energy -= 0.3;
+    }
+
+    if (
+      tagString.includes("relaxing") ||
+      tagString.includes("peaceful") ||
+      tagString.includes("dreamy") ||
+      tagString.includes("calm")
+    ) {
+      energy -= 0.2;
+    }
+
+    // Clamp energy between 0 and 1
+    energy = Math.max(0, Math.min(1, energy));
+
+    // Find matching mood groups
+    let bestMood = "neutral";
+    let bestScore = 0;
+
+    for (const group of ALL_MOOD_GROUPS) {
+      const score = group.keywords.reduce((acc, keyword) => {
+        return acc + (tagString.includes(keyword) ? 1 : 0);
+      }, 0);
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMood = group.id;
+      }
+    }
+
+    // Fallback to energy-based mood if no keywords match
+    if (bestScore === 0) {
+      if (energy > 0.7) {
+        bestMood = "energetic";
+      } else if (energy < 0.3) {
+        bestMood = "chill";
+      }
+    }
+
+    return {
+      energy,
+      mood: bestMood,
+      genres: tags.slice(0, 3), // Keep top 3 genres
+    };
+  };
+
+  // Get Last.fm track info
+  const getLastFmTrackInfo = async (artist: string, track: string) => {
+    try {
+      const response = await fetch(
+        `https://ws.audioscrobbler.com/2.0/?method=track.getInfo&api_key=${LASTFM_API_KEY}&artist=${encodeURIComponent(artist)}&track=${encodeURIComponent(track)}&format=json`
+      );
+
+      if (!response.ok) return null;
+
+      const data = await response.json();
+      const trackInfo = data.track;
+
+      if (!trackInfo || trackInfo.error) return null;
+
+      const tags = trackInfo.toptags?.tag?.map((tag: any) => tag.name) || [];
+
+      return analyzeEnergyAndMood(tags);
+    } catch (error) {
+      console.error("Last.fm API error:", error);
+      return null;
+    }
+  };
+
   const fetchPlaylistDetails = async () => {
     try {
       setLoading(true);
@@ -167,7 +331,7 @@ export default function PlaylistScreen() {
         playlistData.tracks.total
       );
 
-      // Get all tracks (handle pagination)
+      // Get all tracks
       let allTracks: Track[] = [];
       let url = `https://api.spotify.com/v1/playlists/${id}/tracks?limit=50`;
 
@@ -178,81 +342,22 @@ export default function PlaylistScreen() {
         }
 
         const tracksData = await tracksResponse.json();
-        console.log("Fetched tracks batch:", tracksData.items.length);
 
         const validTracks = tracksData.items
           .filter((item: any) => {
-            if (!item.track) {
-              console.log("Skipping item without track");
-              return false;
-            }
-            if (!item.track.id) {
-              console.log("Skipping track without ID:", item.track.name);
-              return false;
-            }
-            if (item.track.type !== "track") {
-              console.log("Skipping non-track item:", item.track.type);
-              return false;
-            }
+            if (!item.track) return false;
+            if (!item.track.id) return false;
+            if (item.track.type !== "track") return false;
             return true;
           })
           .map((item: any) => item.track);
 
-        console.log("Valid tracks in this batch:", validTracks.length);
         allTracks = [...allTracks, ...validTracks];
         url = tracksData.next;
       }
 
-      console.log("Total valid tracks found:", allTracks.length);
-
-      if (allTracks.length === 0) {
-        setTracksWithFeatures([]);
-        return;
-      }
-
-      // Get audio features for all tracks
-      const trackIds = allTracks.map((track) => track.id);
-      console.log("Fetching audio features for", trackIds.length, "tracks");
-      console.log("First few track IDs:", trackIds.slice(0, 5));
-
-      const audioFeatures = await fetchAudioFeatures(trackIds);
-      console.log("Audio features received:", audioFeatures.length);
-
-      // Create a map of track ID to audio features for easier lookup
-      const featuresMap = new Map();
-      audioFeatures.forEach((feature) => {
-        if (feature && feature.id) {
-          featuresMap.set(feature.id, feature);
-        }
-      });
-
-      console.log("Features map size:", featuresMap.size);
-
-      // Combine tracks with their audio features
-      const tracksWithAudioFeatures: TrackWithFeatures[] = [];
-
-      allTracks.forEach((track) => {
-        const features = featuresMap.get(track.id);
-        if (features) {
-          tracksWithAudioFeatures.push({
-            ...track,
-            audioFeatures: features,
-          });
-        } else {
-          console.log(
-            "No audio features for track:",
-            track.name,
-            "ID:",
-            track.id
-          );
-        }
-      });
-
-      console.log(
-        "Final tracks with features:",
-        tracksWithAudioFeatures.length
-      );
-      setTracksWithFeatures(tracksWithAudioFeatures);
+      console.log("Total tracks found:", allTracks.length);
+      setTracksWithFeatures(allTracks);
     } catch (error) {
       console.error("Error fetching playlist:", error);
       showError(
@@ -264,143 +369,119 @@ export default function PlaylistScreen() {
     }
   };
 
-  const fetchAudioFeatures = async (
-    trackIds: string[]
-  ): Promise<AudioFeatures[]> => {
-    const features: AudioFeatures[] = [];
-
-    try {
-      console.log("=== STARTING AUDIO FEATURES FETCH ===");
-      console.log("Total track IDs to fetch:", trackIds.length);
-      console.log("First 3 track IDs:", trackIds.slice(0, 3));
-
-      // Spotify API allows max 100 IDs per request
-      for (let i = 0; i < trackIds.length; i += 100) {
-        const batch = trackIds.slice(i, i + 100);
-        console.log(`\n--- Batch ${Math.floor(i / 100) + 1} ---`);
-        console.log(
-          `Fetching tracks ${i + 1}-${Math.min(i + 100, trackIds.length)}`
-        );
-        console.log("Batch size:", batch.length);
-        console.log("Sample IDs in batch:", batch.slice(0, 3));
-
-        const url = `https://api.spotify.com/v1/audio-features?ids=${batch.join(",")}`;
-        console.log("Request URL length:", url.length);
-
-        const response = await makeAuthenticatedRequest(url);
-        console.log("Response status:", response.status);
-        console.log("Response ok:", response.ok);
-
-        if (response.ok) {
-          const data = await response.json();
-          console.log("Raw response data keys:", Object.keys(data));
-          console.log("Audio features array exists:", !!data.audio_features);
-          console.log(
-            "Audio features array length:",
-            data.audio_features?.length || 0
-          );
-
-          if (data.audio_features) {
-            const allFeatures = data.audio_features;
-            console.log("Raw audio_features array:", allFeatures.slice(0, 2)); // Show first 2
-
-            const validFeatures = allFeatures.filter(
-              (feature: any) => feature !== null
-            );
-            const nullCount = allFeatures.length - validFeatures.length;
-
-            console.log(
-              `Results: ${allFeatures.length} total, ${validFeatures.length} valid, ${nullCount} null`
-            );
-
-            if (validFeatures.length > 0) {
-              console.log(
-                "First valid feature keys:",
-                Object.keys(validFeatures[0])
-              );
-              console.log("First valid feature sample:", {
-                id: validFeatures[0].id,
-                energy: validFeatures[0].energy,
-                valence: validFeatures[0].valence,
-              });
-            }
-
-            features.push(...validFeatures);
-          } else {
-            console.log("❌ No audio_features property in response");
-            console.log("Full response:", data);
-          }
-        } else {
-          console.error("❌ API request failed");
-          console.error("Status:", response.status);
-          try {
-            const errorData = await response.json();
-            console.error("Error response:", errorData);
-          } catch (e) {
-            console.error("Could not parse error response");
-          }
-        }
+  // Intelligently determine clusters based on actual mood diversity
+  const determineOptimalClusters = (tracks: TrackWithFeatures[]) => {
+    // Count unique moods present in the playlist
+    const moodCounts: { [key: string]: number } = {};
+    tracks.forEach((track) => {
+      if (track.features?.mood) {
+        moodCounts[track.features.mood] =
+          (moodCounts[track.features.mood] || 0) + 1;
       }
+    });
 
-      console.log("\n=== AUDIO FEATURES FETCH COMPLETE ===");
-      console.log("Total valid features collected:", features.length);
-      return features;
-    } catch (error) {
-      console.error("❌ Exception in fetchAudioFeatures:", error);
-      return [];
-    }
-  };
+    // Only include moods that have at least 2 songs (to make meaningful clusters)
+    const meaningfulMoods = Object.entries(moodCounts)
+      .filter(([mood, count]) => count >= 2)
+      .map(([mood]) => mood);
 
-  const normalizeFeatures = (features: AudioFeatures[]) => {
-    const tempos = features.map((f) => f.tempo);
-    const maxTempo = Math.max(...tempos);
-    const minTempo = Math.min(...tempos);
+    console.log("Mood distribution:", moodCounts);
+    console.log("Meaningful moods found:", meaningfulMoods);
 
-    return features.map((f) => ({
-      energy: f.energy,
-      valence: f.valence,
-      danceability: f.danceability,
-      tempo:
-        maxTempo > minTempo ? (f.tempo - minTempo) / (maxTempo - minTempo) : 0,
-    }));
+    // Return the number of meaningful mood groups found
+    return Math.max(2, meaningfulMoods.length);
   };
 
   const clusterPlaylist = async () => {
-    if (tracksWithFeatures.length < numberOfClusters) {
-      showError(
-        "Not Enough Songs",
-        `You need at least ${numberOfClusters} songs to create ${numberOfClusters} clusters.`
-      );
-      return;
-    }
-
     setClustering(true);
 
     try {
-      // Normalize the audio features
-      const normalizedFeatures = normalizeFeatures(
-        tracksWithFeatures.map((t) => t.audioFeatures)
+      console.log("Starting Last.fm analysis for energy and mood...");
+
+      const enhancedTracks: TrackWithFeatures[] = [];
+
+      for (let i = 0; i < tracksWithFeatures.length; i++) {
+        const track = tracksWithFeatures[i];
+        const artistName = track.artists[0].name;
+        const trackName = track.name;
+
+        console.log(
+          `Analyzing ${i + 1}/${tracksWithFeatures.length}: ${trackName}`
+        );
+
+        const features = await getLastFmTrackInfo(artistName, trackName);
+
+        enhancedTracks.push({
+          ...track,
+          features: features || {
+            energy: 0.5,
+            mood: "neutral",
+            genres: [],
+          },
+        });
+
+        // Rate limit: 5 requests per second max for Last.fm
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+
+      // Determine optimal clusters based on actual mood diversity
+      const optimalClusters = determineOptimalClusters(enhancedTracks);
+
+      if (enhancedTracks.length < optimalClusters) {
+        showError(
+          "Not Enough Songs",
+          `You need at least ${optimalClusters} songs for optimal clustering.`
+        );
+        return;
+      }
+
+      // Create feature vectors for clustering based on detected moods
+      const moodCounts: { [key: string]: number } = {};
+      enhancedTracks.forEach((track) => {
+        if (track.features?.mood) {
+          moodCounts[track.features.mood] =
+            (moodCounts[track.features.mood] || 0) + 1;
+        }
+      });
+
+      // Get unique moods that actually exist in the playlist
+      const existingMoods = Object.keys(moodCounts).filter(
+        (mood) => moodCounts[mood] >= 2
       );
 
-      // Prepare data for clustering
-      const data = normalizedFeatures.map((f) => [
-        f.energy,
-        f.valence,
-        f.danceability,
-        f.tempo,
-      ]);
+      const features = enhancedTracks.map((track) => {
+        const f = track.features!;
 
-      // Run K-Means clustering
-      const clusters = kMeans(data, numberOfClusters);
+        // Create feature vector based on energy and mood presence
+        const moodVector = existingMoods.map((mood) =>
+          f.mood === mood ? 1 : 0
+        );
 
-      // Assign cluster numbers to tracks
-      const clusteredTracks = tracksWithFeatures.map((track, index) => ({
+        return [
+          f.energy, // Energy level (0-1)
+          ...moodVector, // One-hot encoding for existing moods only
+        ];
+      });
+
+      // Run K-means clustering with optimal number of clusters
+      const clusters = kMeans(features, optimalClusters);
+
+      // Assign clusters to tracks
+      const clusteredTracks = enhancedTracks.map((track, index) => ({
         ...track,
         cluster: clusters[index],
       }));
 
       setTracksWithFeatures(clusteredTracks);
       setClustered(true);
+
+      // Auto-select the first mood group
+      const firstMoodGroup = Object.keys(groupedTracks)[0];
+      if (firstMoodGroup) {
+        setSelectedMoodGroup(firstMoodGroup);
+      }
+
+      console.log(`Clustering complete! Created ${optimalClusters} groups.`);
     } catch (error) {
       console.error("Error clustering playlist:", error);
       showError(
@@ -412,15 +493,39 @@ export default function PlaylistScreen() {
     }
   };
 
-  const getClusterName = (clusterId: number) => {
-    const clusterNames = [
-      "🎵 Group 1",
-      "🎶 Group 2",
-      "🎼 Group 3",
-      "🎹 Group 4",
-      "🎸 Group 5",
-    ];
-    return clusterNames[clusterId] || `🎵 Group ${clusterId + 1}`;
+  const getClusterName = (clusterId: number, tracks: TrackWithFeatures[]) => {
+    const features = tracks.map((t) => t.features).filter(Boolean);
+
+    if (features.length === 0) {
+      return `🎵 Group ${clusterId + 1}`;
+    }
+
+    // Find most common mood in this cluster
+    const moodCounts: { [key: string]: number } = {};
+    features.forEach((f) => {
+      moodCounts[f!.mood] = (moodCounts[f!.mood] || 0) + 1;
+    });
+    const dominantMood = Object.entries(moodCounts).sort(
+      ([, a], [, b]) => b - a
+    )[0]?.[0];
+
+    // Find the corresponding mood group name
+    const moodGroup = ALL_MOOD_GROUPS.find(
+      (group) => group.id === dominantMood
+    );
+
+    return moodGroup ? moodGroup.name : `🎵 Mixed Mood`;
+  };
+
+  const getMoodEmoji = (mood: string) => {
+    const moodGroup = ALL_MOOD_GROUPS.find((group) => group.id === mood);
+    return moodGroup?.name.split(" ")[0] || "🎵";
+  };
+
+  const getEnergyColor = (energy: number) => {
+    if (energy > 0.7) return "bg-red-100 text-red-600";
+    if (energy > 0.4) return "bg-yellow-100 text-yellow-600";
+    return "bg-blue-100 text-blue-600";
   };
 
   const groupedTracks = clustered
@@ -436,6 +541,18 @@ export default function PlaylistScreen() {
         {} as { [key: number]: TrackWithFeatures[] }
       )
     : {};
+
+  // Get mood groups with their names for button display
+  const getMoodGroups = () => {
+    if (!clustered) return [];
+
+    return Object.entries(groupedTracks).map(([clusterId, tracks]) => ({
+      id: clusterId,
+      name: getClusterName(parseInt(clusterId), tracks),
+      tracks: tracks,
+      count: tracks.length,
+    }));
+  };
 
   if (loading) {
     return (
@@ -492,49 +609,18 @@ export default function PlaylistScreen() {
         </View>
       </View>
 
-      {/* Debug Info */}
-      {!loading && (
-        <View className="px-6 py-2 bg-yellow-50 border-b border-yellow-200">
-          <Text className="text-sm text-yellow-800">
-            Debug: Found {tracksWithFeatures.length} tracks with audio features
-            {playlist && ` out of ${playlist.tracks.total} total tracks`}
-          </Text>
-        </View>
-      )}
-
       {/* Clustering Controls */}
       {!clustered && (
         <View className="px-6 py-4 bg-gray-50 border-b border-gray-200">
           <Text className="text-lg font-semibold text-gray-800 mb-3">
-            🧩 Cluster Your Playlist
+            🎵 Smart Grouping
           </Text>
           <Text className="text-gray-600 mb-4">
-            Group your songs by their musical characteristics using AI
-            clustering
+            The app will automatically detect what mood types exist in your
+            playlist and create groups only for those moods (up to 8 possible:
+            Party, High Energy, Feel Good, Chill, Emotional, Electronic,
+            Acoustic, Intense)
           </Text>
-
-          <View className="flex-row items-center justify-between mb-4">
-            <Text className="text-gray-700 font-medium">Number of groups:</Text>
-            <View className="flex-row space-x-2">
-              {[2, 3, 4, 5].map((num) => (
-                <Pressable
-                  key={num}
-                  onPress={() => setNumberOfClusters(num)}
-                  className={`px-3 py-2 rounded-full ${
-                    numberOfClusters === num ? "bg-green-500" : "bg-gray-200"
-                  }`}
-                >
-                  <Text
-                    className={`font-medium ${
-                      numberOfClusters === num ? "text-white" : "text-gray-700"
-                    }`}
-                  >
-                    {num}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
 
           <Pressable
             onPress={clusterPlaylist}
@@ -549,12 +635,12 @@ export default function PlaylistScreen() {
               <View className="flex-row items-center justify-center">
                 <ActivityIndicator size="small" color="white" />
                 <Text className="text-white font-semibold ml-2">
-                  Analyzing Songs...
+                  Analyzing mood & energy...
                 </Text>
               </View>
             ) : (
               <Text className="text-white font-semibold text-center">
-                🔄 Create Groups ({numberOfClusters} clusters)
+                🔍 Auto-Group by Energy & Mood
               </Text>
             )}
           </Pressable>
@@ -566,13 +652,18 @@ export default function PlaylistScreen() {
         <View className="px-6 py-4">
           <View className="flex-row items-center justify-between mb-4">
             <Text className="text-xl font-bold text-gray-800">
-              🎵 Grouped Songs
+              🎵 Mood Groups
             </Text>
             <Pressable
               onPress={() => {
                 setClustered(false);
+                setSelectedMoodGroup(null);
                 setTracksWithFeatures((prev) =>
-                  prev.map((t) => ({ ...t, cluster: undefined }))
+                  prev.map((t) => ({
+                    ...t,
+                    cluster: undefined,
+                    features: undefined,
+                  }))
                 );
               }}
               className="px-3 py-1 bg-gray-200 rounded-full"
@@ -584,7 +675,8 @@ export default function PlaylistScreen() {
           {Object.entries(groupedTracks).map(([clusterId, tracks]) => (
             <View key={clusterId} className="mb-6">
               <Text className="text-lg font-semibold text-gray-800 mb-3">
-                {getClusterName(parseInt(clusterId))} ({tracks.length} songs)
+                {getClusterName(parseInt(clusterId), tracks)} ({tracks.length}{" "}
+                songs)
               </Text>
 
               <View className="space-y-2">
@@ -622,6 +714,26 @@ export default function PlaylistScreen() {
                         >
                           {track.album.name}
                         </Text>
+
+                        {/* Show mood and energy */}
+                        {track.features && (
+                          <View className="flex-row flex-wrap mt-1">
+                            <View className="bg-purple-100 px-2 py-1 rounded mr-1 mb-1">
+                              <Text className="text-xs text-purple-600">
+                                {getMoodEmoji(track.features.mood)}{" "}
+                                {track.features.mood}
+                              </Text>
+                            </View>
+                            <View
+                              className={`px-2 py-1 rounded mr-1 mb-1 ${getEnergyColor(track.features.energy)}`}
+                            >
+                              <Text className="text-xs">
+                                Energy:{" "}
+                                {Math.round(track.features.energy * 100)}%
+                              </Text>
+                            </View>
+                          </View>
+                        )}
                       </View>
                     </View>
                   </View>
@@ -639,7 +751,7 @@ export default function PlaylistScreen() {
             </Text>
 
             <View className="space-y-2">
-              {tracksWithFeatures.map((track, index) => (
+              {tracksWithFeatures.slice(0, 50).map((track, index) => (
                 <View
                   key={`${track.id}-${index}`}
                   className="bg-white rounded-lg shadow-sm border border-gray-200 p-3"
@@ -669,6 +781,11 @@ export default function PlaylistScreen() {
                   </View>
                 </View>
               ))}
+              {tracksWithFeatures.length > 50 && (
+                <Text className="text-center text-gray-500 py-4">
+                  Showing first 50 songs...
+                </Text>
+              )}
             </View>
           </View>
         )

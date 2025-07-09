@@ -11,6 +11,7 @@ export const SCOPES = [
   "user-read-private",
   "playlist-modify-public",
   "playlist-read-private",
+  "playlist-read-collaborative",
 ];
 
 // Function to get dynamic redirect URI
