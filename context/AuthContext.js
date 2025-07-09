@@ -1,4 +1,4 @@
-// context/AuthContext.js// context/AuthContext.js
+//context/AuthContext.js
 import * as SecureStore from "expo-secure-store";
 import { createContext, useEffect, useState } from "react";
 import { Alert } from "react-native";
@@ -39,6 +39,15 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const clearStoredTokens = async () => {
+    try {
+      await SecureStore.deleteItemAsync("accessToken");
+      await SecureStore.deleteItemAsync("refreshToken");
+    } catch (error) {
+      console.error("Error clearing tokens:", error);
+    }
+  };
+
   // Refresh the access token using refresh token
   const refreshAccessToken = async (refreshToken) => {
     try {
@@ -66,10 +75,26 @@ export const AuthProvider = ({ children }) => {
         return data.access_token;
       } else {
         console.error("Token refresh failed:", response.status);
+        const errorData = await response.json().catch(() => ({}));
+        console.error("Refresh error details:", errorData);
+
+        // Clear stored tokens when refresh fails
+        await clearStoredTokens();
+        setAccessToken(null);
+        setIsLoggedIn(false);
+        setUserProfile(null);
+
         return null;
       }
     } catch (error) {
       console.error("Error refreshing token:", error);
+
+      // Clear stored tokens on network error
+      await clearStoredTokens();
+      setAccessToken(null);
+      setIsLoggedIn(false);
+      setUserProfile(null);
+
       return null;
     }
   };
@@ -99,13 +124,11 @@ export const AuthProvider = ({ children }) => {
               setIsLoggedIn(true);
             } else {
               console.log("Refreshed token is also invalid");
-              await clearStoredTokens();
-              setIsLoggedIn(false);
+              // refreshAccessToken already cleared tokens and set auth state
             }
           } else {
             console.log("Token refresh failed");
-            await clearStoredTokens();
-            setIsLoggedIn(false);
+            // refreshAccessToken already cleared tokens and set auth state
           }
         } else {
           console.log("No refresh token available");
@@ -126,15 +149,6 @@ export const AuthProvider = ({ children }) => {
     }
 
     setAuthLoading(false);
-  };
-
-  const clearStoredTokens = async () => {
-    try {
-      await SecureStore.deleteItemAsync("accessToken");
-      await SecureStore.deleteItemAsync("refreshToken");
-    } catch (error) {
-      console.error("Error clearing tokens:", error);
-    }
   };
 
   const logout = async () => {
@@ -188,8 +202,7 @@ export const AuthProvider = ({ children }) => {
           });
         }
       }
-      // If refresh fails, logout user
-      await logout();
+      // If refresh fails, refreshAccessToken already handled logout
       throw new Error("Session expired, please log in again");
     }
 
