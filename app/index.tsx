@@ -1,7 +1,14 @@
 // app/index.tsx// app/index.tsx
 import { useRouter } from "expo-router";
 import { useContext, useEffect, useState } from "react";
-import { Image, Pressable, Text, View, ScrollView, RefreshControl } from "react-native";
+import {
+  Image,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 import { AuthContext } from "../context/AuthContext";
 
 interface PlaylistImage {
@@ -27,8 +34,14 @@ interface Playlist {
 }
 
 export default function HomeScreen() {
-  const { isLoggedIn, authLoading, logout, userProfile, showError, makeAuthenticatedRequest } =
-    useContext(AuthContext);
+  const {
+    isLoggedIn,
+    authLoading,
+    logout,
+    userProfile,
+    showError,
+    makeAuthenticatedRequest,
+  } = useContext(AuthContext);
   const router = useRouter();
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [playlistsLoading, setPlaylistsLoading] = useState(false);
@@ -37,17 +50,17 @@ export default function HomeScreen() {
   // Function to decode HTML entities
   const decodeHtmlEntities = (text: string) => {
     const htmlEntities: { [key: string]: string } = {
-      '&amp;': '&',
-      '&lt;': '<',
-      '&gt;': '>',
-      '&quot;': '"',
-      '&#x27;': "'",
-      '&#x2F;': '/',
-      '&#x5C;': '\\',
-      '&#x60;': '`',
-      '&#x3D;': '=',
+      "&amp;": "&",
+      "&lt;": "<",
+      "&gt;": ">",
+      "&quot;": '"',
+      "&#x27;": "'",
+      "&#x2F;": "/",
+      "&#x5C;": "\\",
+      "&#x60;": "`",
+      "&#x3D;": "=",
     };
-    
+
     return text.replace(/&[#\w]+;/g, (entity) => {
       return htmlEntities[entity] || entity;
     });
@@ -68,21 +81,23 @@ export default function HomeScreen() {
   const fetchPlaylists = async () => {
     try {
       setPlaylistsLoading(true);
-      
-      const response = await makeAuthenticatedRequest('https://api.spotify.com/v1/me/playlists?limit=50');
+
+      const response = await makeAuthenticatedRequest(
+        "https://api.spotify.com/v1/me/playlists?limit=50"
+      );
 
       if (!response.ok) {
-        throw new Error('Failed to fetch playlists');
+        throw new Error("Failed to fetch playlists");
       }
 
       const data = await response.json();
       // Filter to only show playlists owned by the current user
-      const userPlaylists = (data.items || []).filter((playlist: Playlist) => 
-        playlist.owner.id === userProfile?.id
+      const userPlaylists = (data.items || []).filter(
+        (playlist: Playlist) => playlist.owner.id === userProfile?.id
       );
       setPlaylists(userPlaylists);
     } catch (error) {
-      console.error('Error fetching playlists:', error);
+      console.error("Error fetching playlists:", error);
       showError(
         "Playlist Error",
         "Failed to load your playlists. Please try again."
@@ -179,7 +194,9 @@ export default function HomeScreen() {
 
           {playlistsLoading && playlists.length === 0 ? (
             <View className="items-center py-8">
-              <Text className="text-gray-500 text-lg">Loading playlists...</Text>
+              <Text className="text-gray-500 text-lg">
+                Loading playlists...
+              </Text>
             </View>
           ) : playlists.length === 0 ? (
             <View className="items-center py-8">
@@ -207,16 +224,20 @@ export default function HomeScreen() {
                         <Text className="text-2xl">🎵</Text>
                       </View>
                     )}
-                    
+
                     <View className="flex-1">
                       <Text className="text-lg font-semibold text-gray-800 mb-1">
                         {playlist.name}
                       </Text>
                       <Text className="text-sm text-gray-600 mb-1">
-                        {playlist.tracks.total} tracks • by {playlist.owner.display_name}
+                        {playlist.tracks.total} tracks • by{" "}
+                        {playlist.owner.display_name}
                       </Text>
                       {playlist.description && (
-                        <Text className="text-sm text-gray-500" numberOfLines={2}>
+                        <Text
+                          className="text-sm text-gray-500"
+                          numberOfLines={2}
+                        >
                           {decodeHtmlEntities(playlist.description)}
                         </Text>
                       )}
