@@ -1,4 +1,4 @@
-// app/index.tsx// app/index.tsx
+// app/index.tsx
 import { useRouter } from "expo-router";
 import { useContext, useEffect, useState } from "react";
 import {
@@ -114,11 +114,8 @@ export default function HomeScreen() {
   };
 
   const handlePlaylistPress = (playlist: Playlist) => {
-    // TODO: Navigate to playlist details or sorting interface
-    showError(
-      "Coming Soon",
-      `Playlist sorting for "${playlist.name}" will be implemented next!`
-    );
+    // Navigate to playlist clustering screen
+    router.push(`/playlist/${playlist.id}`);
   };
 
   if (authLoading) {
