@@ -1,4 +1,3 @@
-// app/login.tsx (or screens/LoginScreen.tsx)
 import * as AuthSession from "expo-auth-session";
 import { useRouter } from "expo-router";
 import * as SecureStore from "expo-secure-store";
@@ -6,7 +5,7 @@ import React, { useEffect } from "react";
 import { Alert, Pressable, Text, View } from "react-native";
 import {
   discovery,
-  REDIRECT_URI,
+  getRedirectUri,
   SCOPES,
   SPOTIFY_CLIENT_ID,
 } from "../config/spotifyAuth";
@@ -14,11 +13,17 @@ import {
 export default function LoginScreen() {
   const router = useRouter();
 
+  // Get dynamic redirect URI
+  const redirectUri = getRedirectUri();
+
+  // Log the redirect URI for debugging
+  console.log("Using redirect URI:", redirectUri);
+
   const [request, response, promptAsync] = AuthSession.useAuthRequest(
     {
       clientId: SPOTIFY_CLIENT_ID,
       scopes: SCOPES,
-      redirectUri: REDIRECT_URI,
+      redirectUri: redirectUri, // Use the dynamic redirect URI
       usePKCE: true,
     },
     discovery
@@ -26,16 +31,68 @@ export default function LoginScreen() {
 
   useEffect(() => {
     if (response?.type === "success") {
-      const { accessToken, refreshToken } = response.authentication!;
-      SecureStore.setItemAsync("accessToken", accessToken);
-      if (refreshToken) {
-        SecureStore.setItemAsync("refreshToken", refreshToken);
+      // With PKCE, we get an authorization code that needs to be exchanged for tokens
+      if (response.params?.code) {
+        console.log("Authorization code received, exchanging for tokens...");
+        exchangeCodeForTokens(response.params.code);
+      } else {
+        console.error(
+          "Authentication successful but no authorization code received"
+        );
+        Alert.alert(
+          "Login failed",
+          "Authentication completed but no authorization code received."
+        );
       }
-      router.replace("/");
     } else if (response?.type === "error") {
-      Alert.alert("Login failed", "Could not authenticate with Spotify.");
+      console.error("Auth error:", response.error);
+      Alert.alert(
+        "Login failed",
+        `Could not authenticate with Spotify: ${response.error?.message || "Unknown error"}`
+      );
     }
   }, [response]);
+
+  const exchangeCodeForTokens = async (code: string) => {
+    try {
+      const tokenResponse = await AuthSession.exchangeCodeAsync(
+        {
+          clientId: SPOTIFY_CLIENT_ID,
+          code,
+          redirectUri: redirectUri,
+          extraParams: {
+            code_verifier: request?.codeVerifier || "",
+          },
+        },
+        discovery
+      );
+
+      if (tokenResponse.accessToken) {
+        await SecureStore.setItemAsync(
+          "accessToken",
+          tokenResponse.accessToken
+        );
+        if (tokenResponse.refreshToken) {
+          await SecureStore.setItemAsync(
+            "refreshToken",
+            tokenResponse.refreshToken
+          );
+        }
+        router.replace("/");
+      } else {
+        Alert.alert(
+          "Login failed",
+          "Could not retrieve access token from Spotify."
+        );
+      }
+    } catch (error) {
+      console.error("Token exchange error:", error);
+      Alert.alert(
+        "Login failed",
+        "Could not exchange authorization code for tokens."
+      );
+    }
+  };
 
   return (
     <View className="flex-1 justify-center items-center bg-white px-6">
