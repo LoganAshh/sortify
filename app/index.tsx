@@ -9,7 +9,17 @@ import {
   Text,
   View,
 } from "react-native";
+import {
+  configureReanimatedLogger,
+  ReanimatedLogLevel,
+} from "react-native-reanimated";
 import { AuthContext } from "../context/AuthContext";
+
+// Configure Reanimated logger to reduce console warnings
+configureReanimatedLogger({
+  level: ReanimatedLogLevel.error, // Only show errors, not warnings
+  strict: false, // Disable strict mode to reduce warnings
+});
 
 interface PlaylistImage {
   url: string;
